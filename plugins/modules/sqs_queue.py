@@ -96,6 +96,12 @@ options:
       - The length of time, in seconds, for which Amazon SQS can reuse a data key to encrypt or decrypt messages before calling AWS KMS again.
     aliases: [kms_data_key_reuse_period]
     type: int
+  sqs_managed_sse_enabled:
+    description:
+      - Enables server-side encryption (SSE) using SQS-owned encryption keys.
+      - Mutually exclusive with I(kms_master_key_id).
+    type: bool
+    version_added: 8.2.0
   content_based_deduplication:
     type: bool
     description:
@@ -144,6 +150,11 @@ kms_data_key_reuse_period_seconds:
     type: int
     returned: always
     sample: 300
+sqs_managed_sse_enabled:
+    description: Whether SQS-owned SSE is enabled on the queue.
+    type: bool
+    returned: always
+    sample: true
 maximum_message_size:
     description: The maximum message size in bytes.
     type: int
@@ -351,6 +362,9 @@ def create_or_update_sqs_queue(client, module):
             create_attributes["FifoQueue"] = "True"
         if kms_master_key_id:
             create_attributes["KmsMasterKeyId"] = kms_master_key_id
+        sqs_managed_sse_enabled = module.params.get("sqs_managed_sse_enabled")
+        if sqs_managed_sse_enabled is not None:
+            create_attributes["SqsManagedSseEnabled"] = str(sqs_managed_sse_enabled).lower()
         result["changed"] = True
         if module.check_mode:
             return result
@@ -496,11 +510,16 @@ def main():
         fifo_throughput_limit=dict(type="str", choices=["perQueue", "perMessageGroupId"]),
         deduplication_scope=dict(type="str", choices=["queue", "messageGroup"]),
         kms_data_key_reuse_period_seconds=dict(type="int", aliases=["kms_data_key_reuse_period"], no_log=False),
+        sqs_managed_sse_enabled=dict(type="bool"),
         content_based_deduplication=dict(type="bool"),
         tags=dict(type="dict", aliases=["resource_tags"]),
         purge_tags=dict(type="bool", default=True),
     )
-    module = AnsibleAWSModule(argument_spec=argument_spec, supports_check_mode=True)
+    module = AnsibleAWSModule(
+        argument_spec=argument_spec,
+        supports_check_mode=True,
+        mutually_exclusive=[["kms_master_key_id", "sqs_managed_sse_enabled"]],
+    )
 
     state = module.params.get("state")
     retry_decorator = AWSRetry.jittered_backoff(catch_extra_error_codes=["AWS.SimpleQueueService.NonExistentQueue"])
